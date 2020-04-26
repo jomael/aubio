@@ -32,6 +32,7 @@
 #endif /* HAVE_JACK */
 
 int verbose = 0;
+int quiet = 0;
 int usejack = 0;
 // input / output
 char_t *sink_uri = NULL;
@@ -54,6 +55,7 @@ uint_t time_format = 0; // for "seconds", 1 for "ms", 2 for "samples"
 char_t * tempo_method = "default";
 // more general stuff
 smpl_t silence_threshold = -90.;
+smpl_t release_drop = 10.;
 uint_t mix_input = 0;
 
 uint_t force_overwrite = 0;
@@ -62,8 +64,8 @@ uint_t force_overwrite = 0;
 // internal memory stuff
 aubio_source_t *this_source = NULL;
 aubio_sink_t *this_sink = NULL;
-fvec_t *ibuf;
-fvec_t *obuf;
+fvec_t *input_buffer;
+fvec_t *output_buffer;
 
 smpl_t miditap_note = 69.;
 smpl_t miditap_velo = 65.;
@@ -75,8 +77,12 @@ extern void usage (FILE * stream, int exit_code);
 extern int parse_args (int argc, char **argv);
 
 #if HAVE_JACK
+#define MAX_MIDI_EVENTS 128
+#define MAX_MIDI_EVENT_SIZE 3
 aubio_jack_t *jack_setup;
 jack_midi_event_t ev;
+jack_midi_data_t midi_data[MAX_MIDI_EVENTS * MAX_MIDI_EVENT_SIZE];
+size_t midi_event_count = 0;
 #endif /* HAVE_JACK */
 
 void examples_common_init (int argc, char **argv);
@@ -121,18 +127,15 @@ void examples_common_init (int argc, char **argv)
     source_uri = "jack";
 #endif /* HAVE_JACK */
   }
-  ibuf = new_fvec (hop_size);
-  obuf = new_fvec (hop_size);
+  input_buffer = new_fvec (hop_size);
+  output_buffer = new_fvec (hop_size);
 
 }
 
 void examples_common_del (void)
 {
-#ifdef HAVE_JACK
-  if (ev.buffer) free(ev.buffer);
-#endif
-  del_fvec (ibuf);
-  del_fvec (obuf);
+  del_fvec (input_buffer);
+  del_fvec (output_buffer);
   aubio_cleanup ();
   fflush(stderr);
   fflush(stdout);
@@ -146,8 +149,7 @@ void examples_common_process (aubio_process_func_t process_func,
   if (usejack) {
 
 #ifdef HAVE_JACK
-    ev.size = 3;
-    ev.buffer = malloc (3 * sizeof (jack_midi_data_t));
+    ev.size = MAX_MIDI_EVENT_SIZE;
     ev.time = 0; // send it now
     debug ("Jack activation ...\n");
     aubio_jack_activate (jack_setup, process_func);
@@ -165,14 +167,14 @@ void examples_common_process (aubio_process_func_t process_func,
     blocks = 0;
 
     do {
-      aubio_source_do (this_source, ibuf, &read);
-      process_func (ibuf, obuf);
+      aubio_source_do (this_source, input_buffer, &read);
+      process_func (input_buffer, output_buffer);
       // print to console if verbose or no output given
-      if (verbose || sink_uri == NULL) {
+      if ((verbose || sink_uri == NULL) && !quiet) {
         print();
       }
       if (this_sink) {
-        aubio_sink_do (this_sink, obuf, hop_size);
+        aubio_sink_do (this_sink, output_buffer, hop_size);
       }
       blocks++;
       total_read += read;
@@ -183,7 +185,8 @@ void examples_common_process (aubio_process_func_t process_func,
         total_read, blocks, hop_size, source_uri, samplerate);
 
     del_aubio_source (this_source);
-    del_aubio_sink   (this_sink);
+    if (this_sink)
+      del_aubio_sink   (this_sink);
 
   }
 }
@@ -193,6 +196,10 @@ send_noteon (smpl_t pitch, smpl_t velo)
 {
 #ifdef HAVE_JACK
   if (usejack) {
+    ev.buffer = midi_data + midi_event_count++ * MAX_MIDI_EVENT_SIZE;
+    if (midi_event_count >= MAX_MIDI_EVENTS) {
+      midi_event_count = 0;
+    }
     ev.buffer[2] = velo;
     ev.buffer[1] = pitch;
     if (velo == 0) {

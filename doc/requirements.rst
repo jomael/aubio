@@ -31,6 +31,9 @@ unusual location.
     If ``pkg-config`` is not found in ``PATH``, the configure step will
     succeed, but none of the external libraries will be used.
 
+Media libraries
+---------------
+
 libav
 .....
 
@@ -78,6 +81,9 @@ To enable this option, configure with ``--enable-samplerate``. The build will
 then fail if the required library is not found. To disable this option,
 configure with ``--disable-samplerate``
 
+Optimisation libraries
+----------------------
+
 libfftw3
 ........
 
@@ -91,6 +97,100 @@ that are not a power of 2.
 To enable this option, configure with ``--enable-fftw3``. The build will
 then fail if the required library is not found. To disable this option,
 configure with ``--disable-fftw3``
+
+blas
+....
+
+On macOs/iOS, `blas
+<https://en.wikipedia.org/wiki/Basic_Linear_Algebra_Subprograms>`_ are made
+available through the Accelerate framework.
+
+On Linux, they can be enabled with ``--enable-blas``.  On Debian (etch),
+`atlas`_, `openblas`_, and `libblas`_ have been successfully tested.
+
+When enabled, ``waf`` will check for the current blas configuration by running
+``pkg-config --libs blas``. Depending of the library path returned by
+``pkg-config``, different headers will be searched for.
+
+.. note::
+
+    On Debian systems, `multiple versions of BLAS and LAPACK
+    <https://wiki.debian.org/DebianScience/LinearAlgebraLibraries>`_ can be
+    installed. To configure which libblas is being used:
+
+    .. code-block:: console
+
+      $ sudo update-alternatives --config libblas.so
+
+..
+  Expected pkg-config output for each alternative:
+    /usr/lib/atlas-base/atlas/libblas.so
+    -L/usr/lib/atlas-base/atlas -lblas
+    /usr/lib/openblas-base/libblas.so
+    -L/usr/lib/openblas-base -lblas
+    /usr/lib/libblas/libblas.so
+    -lblas
+
+atlas
+.....
+
+`ATLAS BLAS APIs <http://math-atlas.sourceforge.net/>`_ will be used the path
+returned by ``pkg-config --libs blas`` contains ``atlas``.
+
+..
+  ``<atlas/cblas.h>`` will be included.
+
+Example:
+
+.. code-block:: console
+
+  $ pkg-config --libs blas
+  -L/usr/lib/atlas-base/atlas -lblas
+  $ ./waf configure --enable-atlas
+  [...]
+  Checking for 'blas'                      : yes
+  Checking for header atlas/cblas.h        : yes
+
+openblas
+........
+
+`OpenBlas libraries <https://www.openblas.net/>`_ will be used when the output
+of ``pkg-config --libs blas`` contains 'openblas',
+
+..
+  ``<openblas/cblas.h>`` will be included.
+
+Example:
+
+.. code-block:: console
+
+  $ pkg-config --libs blas
+  -L/usr/lib/openblas-base -lblas
+  $ ./waf configure --enable-atlas
+  [...]
+  Checking for 'blas'                      : yes
+  Checking for header openblas/cblas.h     : yes
+
+libblas
+.......
+
+`Netlib's libblas (LAPACK) <https://www.netlib.org/lapack/>`_ will be used if
+no specific library path is specified by ``pkg-config``
+
+..
+  ``<cblas.h>`` will be included.
+
+Example:
+
+.. code-block:: console
+
+  $ pkg-config --libs blas
+  -lblas
+  $ ./waf configure --enable-atlas
+  [...]
+  Checking for 'blas'                      : yes
+  Checking for header cblas.h              : yes
+
 
 Platform notes
 --------------
@@ -197,12 +297,43 @@ Here is an example of a custom command:
                 --manpagesdir=/opt/share/man  \
                 uninstall clean distclean dist distcheck
 
+.. _doubleprecision:
+
 Double precision
 ................
 
+The datatype used to store real numbers in aubio is named `smpl_t`. By default,
+`smpl_t` is defined as `float`, a `single-precision format
+<https://en.wikipedia.org/wiki/Single-precision_floating-point_format>`_
+(32-bit).  Some algorithms require a floating point representation with a
+higher precision, for instance to prevent arithmetic underflow in recursive
+filters.  In aubio, these special samples are named `lsmp_t` and defined as
+`double` by default (64-bit).
+
+Sometimes it may be useful to compile aubio in `double-precision`, for instance
+to reproduce numerical results obtained with 64-bit routines. In this case,
+`smpl_t` will be defined as `double`.
+
+The following table shows how `smpl_t` and `lsmp_t` are defined in single- and
+double-precision modes:
+
+.. list-table:: Single and double-precision modes
+   :align: center
+
+   * -
+     - single
+     - double
+   * - `smpl_t`
+     - ``float``
+     - ``double``
+   * - `lsmp_t`
+     - ``double``
+     - ``long double``
+
 To compile aubio in double precision mode, configure with ``--enable-double``.
 
-To compile aubio in single precision mode, use ``--disable-double`` (default).
+To compile in single-precision mode (default), use ``--disable-double`` (or
+simply none of these two options).
 
 Disabling the tests
 ...................
